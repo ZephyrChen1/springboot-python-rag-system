@@ -1,0 +1,11 @@
+# 测试用的配置：只需要覆盖下面两项，其余（multipart、mybatis-plus、rag、logging）
+# 继续用 src/main/resources/application.yaml 里的。
+#
+# 为什么要单独一个库：启动自检（common/PersistenceStartupCheck）会把 status='STREAMING'
+# 的行全部改成 INTERRUPTED —— 这一条对着开发库跑是**破坏性**的（开发库里有正在生成的流时，
+# 它会把活的说成死的）。所以测试连另一个库。建库语句在 start.md 的 ⓿ 里。
+#
+# 也正因如此，本项目的验证靠「真实启动 + 看日志/看 Navicat」，不靠这个测试。
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/computer_biz_test?characterEncoding=utf8&sslMode=DISABLED&allowPublicKeyRetrieval=true

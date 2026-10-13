@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.vite/
+*.local
+
+# 验证脚本生成的截图
+tools/*.png

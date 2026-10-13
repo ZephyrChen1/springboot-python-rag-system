@@ -1,0 +1,159 @@
+body {
+  margin: 0;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-row {
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.task-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.task-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-row__name {
+  max-width: 60%;
+}
+
+.task-row__size {
+  font-size: 12px;
+}
+
+.task-row__phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.task-row__phase .ant-progress {
+  flex: 1;
+  margin: 0;
+}
+
+.task-row__stage {
+  flex: 1;
+}
+
+.task-row__result {
+  margin: 8px 0 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.task-row__error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.task-row__actions {
+  margin-top: 4px;
+}
+
+/* ---------------------------------------------------------------- 问答 */
+
+.chat-list {
+  /* 固定高度的滚动区：回答是流式的，让它自己长会把整个页面顶下去，
+     输入框就会被推出屏幕 —— 用户得一边打字一边追着它滚 */
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chat-msg {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.chat-msg--user {
+  justify-content: flex-end;
+}
+
+.chat-msg__bubble {
+  max-width: 84%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f5f5f5;
+}
+
+.chat-msg--user .chat-msg__bubble {
+  background: #e6f4ff;
+}
+
+.chat-msg__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.chat-msg__role {
+  font-size: 12px;
+}
+
+.chat-msg__text {
+  /* 上游给的是纯文本，换行必须原样保留 */
+  white-space: pre-wrap;
+  /* 长 URL / 长英文单词不换行会把气泡撑破 */
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.chat-msg__pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.chat-msg__error {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* 流式光标 */
+.chat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  /* steps(1) 是硬切换：渐变闪烁会显得很廉价，而且更耗电 */
+  animation: chat-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes chat-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.chat-composer {
+  margin-top: 12px;
+}
+
+.chat-composer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}

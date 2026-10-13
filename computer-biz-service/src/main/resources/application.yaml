@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: computer-biz-service
+  servlet:
+    multipart: #文件上传配置
+      # 上传的是知识库文档，默认 1MB 肯定不够
+      max-file-size: 100MB
+      max-request-size: 100MB
+  datasource:
+    # 密码不进仓库：启动前在终端里设环境变量（见 start.md 里那段）
+    #   DB_USER / DB_PASSWORD —— 名字是这套占位符的一部分，改这里别忘了改那边
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:computer_biz}?characterEncoding=utf8&sslMode=DISABLED&allowPublicKeyRetrieval=true
+    username: ${DB_USER:computer_biz}
+    password: ${DB_PASSWORD:}  #优先读取环境变量，没有就默认
+    hikari: #SpringBoot 自带的数据库连接池，预先创建数据库连接，复用连接
+      pool-name: computer-biz-hikari # 日志里好认
+      maximum-pool-size: 10
+      # 默认 30 秒。库挂了的时候，Tomcat 线程会被扣住 30 秒，而前端的 axios 超时只有 15 秒 ——
+      # 结果是前端先超时、你却在日志里什么都看不到。本机 MySQL 给 3 秒绰绰有余
+      connection-timeout: 3000
+
+mybatis-plus:
+  configuration:
+    # 映射（数据库 file_name → JAVA fileName）
+    map-underscore-to-camel-case: true
+    # 指定 MyBatis 输出 SQL 日志的实现类
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      # MP 默认是 ASSIGN_ID（雪花，19 位）。这里要 auto：主键交给 MySQL 自增，
+      # 本地调试时 id 是 1/2/3 好读得多，而且「按插入顺序」这种语义天然成立
+      # （同一轮问答的两行消息就靠 id 排序，不能靠时间）
+      id-type: auto #全局主键生成策略
+
+rag:
+  base-url: http://localhost:8102
+
+logging:
+  level:
+    org.example.computerbizservice.client: DEBUG #打印DEBUG级别日志
+    # 打 SQL。MyBatis 用的 logger 名就是 mapper 接口的全限定名，
+    # 所以这一行等于「打开 mapper 包里每条语句的 Prepared / Updates 输出」
+    org.example.computerbizservice.mapper: DEBUG

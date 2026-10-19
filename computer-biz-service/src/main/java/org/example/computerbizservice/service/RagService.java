@@ -8,6 +8,7 @@ import org.example.computerbizservice.common.enums.ChatMsgStatus;
 import org.example.computerbizservice.dto.request.rag.AiChatReq;
 import org.example.computerbizservice.dto.request.rag.FileUploadReq;
 import org.example.computerbizservice.dto.response.rag.FileUploadResp;
+import org.example.computerbizservice.dto.response.rag.RagStageResp;
 import org.example.computerbizservice.dto.response.rag.TaskQueryResp;
 import org.example.computerbizservice.exception.RagApiException;
 import org.springframework.stereotype.Service;
@@ -53,6 +54,19 @@ public class RagService {
         safeWrite("上传受理落库", resp == null ? "(无 job_id)" : resp.getJobId(),
                 () -> ingestRecordService.begin(resp, file));
         return resp;
+    }
+
+    /**
+     * 只暂存、不入库。给 Agent 问答页的「上传文件」用：
+     * 用户上传后先拿到 staged_id，再决定是否让 Agent 入库。
+     *
+     * <p>不落 ingest 记录：这里还没有 job_id，也没有开始处理。
+     */
+    public RagStageResp stage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("file 不能为空");
+        }
+        return ragClient.stage(file);
     }
 
     public TaskQueryResp queryTask(String jobId) {

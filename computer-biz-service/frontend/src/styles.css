@@ -157,3 +157,154 @@ body {
   gap: 8px 12px;
   margin-top: 8px;
 }
+
+/* ------------------------------------------------------------ Agent 问答 */
+
+.agent-run-id {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* 轨迹区在气泡内部，尽量紧凑，别把答案挤走 */
+.agent-steps {
+  margin: 2px 0 6px;
+}
+
+.agent-steps .ant-collapse-header {
+  padding: 2px 0 !important;
+}
+
+.agent-steps .ant-collapse-content-box {
+  padding: 0 !important;
+}
+
+.agent-steps__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 6px;
+}
+
+.agent-thought__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.agent-thought__text {
+  margin-top: 2px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #595959;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-tool {
+  padding: 6px 8px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+/* 失败的调用必须一眼能看见：这通常解释了回答为什么不对 */
+.agent-tool--failed {
+  border-color: #ffccc7;
+  background: #fff2f0;
+}
+
+.agent-tool__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agent-tool__icon {
+  color: #1677ff;
+}
+
+.agent-tool__name {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.agent-tool__spacer {
+  flex: 1;
+}
+
+.agent-tool__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.agent-tool__status--ok {
+  color: #52c41a;
+}
+
+.agent-tool__status--failed {
+  color: #ff4d4f;
+}
+
+.agent-tool__elapsed {
+  font-size: 11px;
+}
+
+.agent-tool__args {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #8c8c8c;
+  word-break: break-all;
+}
+
+.agent-tool__args code {
+  font-size: 11px;
+}
+
+/* 工具结果可能很长（检索摘要），限高 + 自己滚，别把对话撑爆 */
+.agent-tool__summary {
+  margin-top: 4px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #434343;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-tool__error {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.agent-waiting-confirm {
+  margin: 4px 0 6px;
+  font-size: 12px;
+}
+
+.agent-confirm p {
+  line-height: 1.6;
+}
+
+.agent-confirm__args {
+  margin: 8px 0;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f5f5f5;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

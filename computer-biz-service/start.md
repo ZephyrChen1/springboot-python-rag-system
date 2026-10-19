@@ -22,11 +22,11 @@ cd D:\python\code
 # ② Java BFF（8080）
 # 密码不进仓库，每个新终端先设一次。DB_USER 默认就是 computer_biz，不用设
 $env:DB_PASSWORD = "123456"
-cd D:\java\computer-biz-service
+cd D:\LocalGit\springboot-python-rag-system\computer-biz-service
 .\mvnw.cmd spring-boot:run
 
 # ③ 前端（5173）
-cd D:\java\computer-biz-service\frontend
+cd D:\LocalGit\springboot-python-rag-system\computer-biz-service\frontend
 npm install      # 只有第一次要
 npm run dev
 

@@ -94,3 +94,44 @@ lightrag_max_history_turns = int(os.environ.get("LIGHTRAG_MAX_HISTORY_TURNS", "1
 lightrag_include_references = True   # 回答末尾附带引用来源
 lightrag_language = os.environ.get("LIGHTRAG_LANGUAGE", "Simplified Chinese")  # 实体/关系抽取语言
 lightrag_query_timeout = 600     # 单次查询超时(秒)；入库耗时更长，不设上限
+
+# ==== [Agentic RAG] 决策循环配置 ====
+# 详见 docs/Agent化改造实施计划.md
+def _env_bool(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+agent_enabled = _env_bool("AGENT_ENABLED", "1")
+agent_max_steps = int(os.environ.get("AGENT_MAX_STEPS", "6"))
+agent_step_timeout_s = float(os.environ.get("AGENT_STEP_TIMEOUT_S", "90"))
+agent_tool_result_max_chars = int(os.environ.get("AGENT_TOOL_RESULT_MAX_CHARS", "2000"))
+agent_history_max_turns = int(os.environ.get("AGENT_HISTORY_MAX_TURNS", "10"))
+# 单条历史消息回放的最大字符数。长回答/长问题在写入和读取时都会截断，
+# 避免 10 轮历史把模型上下文撑爆（旧链路已经因为 top_k 撞过一次上限）。
+agent_history_max_chars = int(os.environ.get("AGENT_HISTORY_MAX_CHARS", "2000"))
+agent_max_concurrent_runs = int(os.environ.get("AGENT_MAX_CONCURRENT_RUNS", "2"))
+
+# 写工具总闸门：默认关闭。关闭时模型在 tools 列表里看不到 kb_ingest / kb_delete。
+agent_allow_write_tools = _env_bool("AGENT_ALLOW_WRITE_TOOLS", "0")
+# 写操作人工确认：开启后，写工具执行前会先发 confirm_required 事件等待用户确认。
+agent_require_confirm = _env_bool("AGENT_REQUIRE_CONFIRM", "1")
+agent_confirm_ttl_s = int(os.environ.get("AGENT_CONFIRM_TTL_S", "120"))
+
+# 外部能力
+agent_web_search_enabled = _env_bool("AGENT_WEB_SEARCH_ENABLED", "0")
+agent_web_search_url = os.environ.get("AGENT_WEB_SEARCH_URL", "")
+
+# 暂存区与 trace（运行时生成，不纳入版本控制）
+agent_stage_dir = os.environ.get("AGENT_STAGE_DIR", "./uploads")
+agent_trace_dir = os.environ.get("AGENT_TRACE_DIR", "./agent_runs")
+# 暂存文件大小上限（字节）。默认 100MB，与 Spring multipart 的 max-file-size 对齐；
+# 没有这个上限，/v1/kb/stage 就是一个可以打满磁盘的匿名入口。
+agent_stage_max_bytes = int(
+    os.environ.get("AGENT_STAGE_MAX_BYTES", str(100 * 1024 * 1024))
+)
+
+# Phase 4：业务数据查询走 Java BFF 的受限接口，不直连 MySQL
+agent_biz_query_url = os.environ.get(
+    "AGENT_BIZ_QUERY_URL", "http://localhost:8080/internal/rag/query"
+)
+agent_biz_query_key = os.environ.get("AGENT_BIZ_QUERY_KEY", "")

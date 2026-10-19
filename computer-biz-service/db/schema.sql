@@ -102,3 +102,45 @@ CREATE TABLE `chat_message` (
   CONSTRAINT `fk_msg_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='问答消息：一次问答两行（user + assistant），助手行先以 STREAMING 建出来、终态时更新一次';
+
+
+-- ---------------------------------------------------------------- ⑤ Agent 决策轨迹
+-- Agentic RAG 的一次 run 有 1~6 步，每步可能有多个并行工具调用，是一条流水。
+-- 不塞进 chat_message：那会破坏「一轮两行」的语义，也没法按步骤查。
+--
+-- 写入方式（见 service/AgentStepService）：
+--   tool_call 事件  → INSERT 一行 status=RUNNING
+--   tool_result 事件 → 按 run_id + call_id UPDATE 成 OK/FAILED，并回填摘要与耗时
+-- 两条写入排在同一个单线程队列上，所以不会出现「更新先于插入」。
+--
+-- ★ 这张表是**旁路观测数据**：写失败不影响问答。真正的完整事件流是 Python 侧的
+--   agent_runs/<run_id>.jsonl（含 data 细节），这里是给 Java/前端用的结构化摘要。
+--
+-- ★ assistant_id 把轨迹挂到具体的助手消息上。没有它，回放历史时只能按
+--   session_id + 时间猜「这条轨迹属于哪次回答」；同一会话连续追问时会挂错。
+--   老库升级（已建过 chat_step 的库需要手工执行一次）：
+--     ALTER TABLE `chat_step`
+--       ADD COLUMN `assistant_id` BIGINT UNSIGNED DEFAULT NULL
+--         COMMENT 'chat_message.id（助手行）；beginExchange 落库失败时为 NULL' AFTER `run_id`,
+--       ADD KEY `idx_step_assistant` (`assistant_id`, `step_no`, `id`);
+CREATE TABLE `chat_step` (
+  `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `run_id`         VARCHAR(64)     NOT NULL              COMMENT '一次 agent run 的 ID（上游 start 事件的 run_id，32 位 hex）',
+  `assistant_id`   BIGINT UNSIGNED DEFAULT NULL          COMMENT 'chat_message.id（助手行）；beginExchange 落库失败时为 NULL',
+  `session_id`     VARCHAR(128)    NOT NULL              COMMENT '所属会话',
+  `call_id`        VARCHAR(64)     DEFAULT NULL          COMMENT '模型给工具调用分配的 ID；thought 行为 NULL。和 run_id 一起把 tool_result 对回 tool_call',
+  `step_no`        INT             NOT NULL              COMMENT '决策循环轮次，1 起',
+  `type`           VARCHAR(16)     NOT NULL              COMMENT 'thought / tool_call',
+  `name`           VARCHAR(64)     DEFAULT NULL          COMMENT '工具名；thought 行为 NULL',
+  `args_json`      TEXT            DEFAULT NULL          COMMENT '工具参数 JSON；thought 行为 NULL',
+  `result_summary` TEXT            DEFAULT NULL          COMMENT 'tool_result 给模型看的摘要；thought 行存思考文本',
+  `elapsed_ms`     INT             DEFAULT NULL          COMMENT '工具耗时；优先用上游 elapsed_ms，缺失时由 call/result 的 ts 相减',
+  `status`         VARCHAR(16)     NOT NULL              COMMENT 'RUNNING / OK / FAILED / THOUGHT',
+  `created_at`     DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_step_run` (`run_id`, `step_no`),
+  KEY `idx_step_run_call` (`run_id`, `call_id`),
+  KEY `idx_step_session` (`session_id`, `id`),
+  KEY `idx_step_assistant` (`assistant_id`, `step_no`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Agent 决策轨迹：一次 run 的思考与工具调用流水（旁路观测，写失败不影响问答）';

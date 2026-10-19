@@ -25,6 +25,10 @@ Lightrag_db/
 chat_history/
 # 已入库文件的 md5 指纹表
 md5.text
+# Agent 上传暂存区（原始文件）
+uploads/
+# Agent run trace（含工具参数与观察结果）
+agent_runs/
 
 # ==== IDE / 编辑器 ====
 .idea/

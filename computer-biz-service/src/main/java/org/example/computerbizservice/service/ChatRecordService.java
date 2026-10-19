@@ -109,13 +109,30 @@ public class ChatRecordService extends ServiceImpl<ChatMessageMapper, ChatMessag
      */
     @Transactional
     public Long beginExchange(AiChatReq req, long userId) {
-        if (req == null || TextUtils.isBlank(req.getSessionId()) || TextUtils.isBlank(req.getMessage())) {
+        if (req == null) {
+            return null;
+        }
+        return doBeginExchange(req.getSessionId(), req.getMessage(), userId, req.getTopK());
+    }
+
+    /**
+     * Agent 问答用的重载：请求体里没有 topK（/ai/agent/chat 不接收这个参数）。
+     *
+     * <p>两个 public 重载都带 {@code @Transactional}，因为 Spring 的事务是代理织入的：
+     * 从外部调用哪个方法，哪个方法上的注解才生效。私有核心方法不注解，避免自调用陷阱。
+     */
+    @Transactional
+    public Long beginExchange(String sessionId, String message, long userId) {
+        return doBeginExchange(sessionId, message, userId, null);
+    }
+
+    private Long doBeginExchange(String sessionId, String message, long userId, Integer topK) {
+        if (TextUtils.isBlank(sessionId) || TextUtils.isBlank(message)) {
             log.debug("问答落库：请求不合法（sessionId/message 为空），不写任何行（上游也会 422 拒掉它）");
             return null;
         }
 
-        String sessionId = req.getSessionId();
-        ensureSession(sessionId, userId, req.getMessage());
+        ensureSession(sessionId, userId, message);
 
         // ★ 两行共用一个时间戳：前端把那两条消息当作「一条消息对」（见类注释）
         LocalDateTime now = LocalDateTime.now();
@@ -124,9 +141,9 @@ public class ChatRecordService extends ServiceImpl<ChatMessageMapper, ChatMessag
         question.setSessionId(sessionId);
         question.setUserId(userId);
         question.setRole(ChatRole.USER);
-        question.setContent(req.getMessage());
+        question.setContent(message);
         question.setStatus(ChatMsgStatus.DONE); // 提问本身没有流，写进去就是终态
-        question.setTopK(req.getTopK());        // 可能为 null，代表「用上游默认值」
+        question.setTopK(topK);                 // 可能为 null，代表「用上游默认值」
         question.setCreatedAt(now);
         save(question);
 

@@ -130,6 +130,58 @@ class LightRAGService:
             file_paths=[file_path] if file_path else None,
         )
 
+    # ---------------- Agent 层使用的接口 ----------------
+    def submit(self, coro_factory, *args, **kwargs):
+        """把任意协程投递到常驻 loop，返回 concurrent.futures.Future。
+
+        agent 循环必须跑在这个 loop 上：LightRAG 的模块级共享锁绑定在它上面，
+        换 loop 会触发 "bound to a different event loop"。
+        """
+        return asyncio.run_coroutine_threadsafe(
+            coro_factory(*args, **kwargs), self._loop
+        )
+
+    def cancel_task(self, task: asyncio.Task) -> None:
+        """从任意线程取消常驻 loop 上的 Task（线程安全）。
+
+        asyncio.Task.cancel() 不是线程安全的，必须通过 call_soon_threadsafe
+        投递到 loop 线程执行。消费者断连时由 runtime 调用。
+        """
+        if task is None or task.done() or self._closed:
+            return
+        self._loop.call_soon_threadsafe(task.cancel)
+
+    async def aquery_data(self, query: str, param: QueryParam | None = None):
+        """检索但不生成，返回结构化结果。必须在常驻 loop 上调用。
+
+        与 aquery(only_need_context=True) 的区别：后者返回拼好的提示词字符串，
+        前者返回 entities / relationships / chunks，便于摘要、截断和引用溯源。
+        """
+        return await self._rag.aquery_data(query, param=param or QueryParam())
+
+    async def ainsert(self, text: str, file_path: str | None = None) -> str:
+        """异步入库。必须在常驻 loop 上调用。"""
+        return await self._rag.ainsert(
+            text,
+            file_paths=[file_path] if file_path else None,
+        )
+
+    async def adelete_by_doc_id(self, doc_id: str):
+        """异步删文档及其派生数据。必须在常驻 loop 上调用。
+
+        注意：LightRAG 会重建受影响的实体/关系，可能耗时数分钟。
+        """
+        return await self._rag.adelete_by_doc_id(doc_id)
+
+    def delete_by_doc_id(self, doc_id: str):
+        """同步删除（供 agent 工具放到线程池里跑）。
+
+        删除一旦开始就不应该被请求取消打断：半截删除会留下孤立实体/关系。
+        工具层用 asyncio.to_thread 调它，这样断连只会停止“等待”，不会
+        取消正在进行的删除本身。
+        """
+        return self._call(self._rag.adelete_by_doc_id, doc_id)
+
     def stream(
             self,
             question: str,

@@ -34,6 +34,10 @@ mybatis-plus:
 
 rag:
   base-url: http://localhost:8102
+  # Python agent 的 biz_query 工具回调 /internal/rag/query 时的密钥。
+  # 留空 = 该接口关闭（返回 503）。Python 侧对应 AGENT_BIZ_QUERY_KEY，两边必须一致。
+  # ★ 不要下发到前端；生产环境请用环境变量覆盖。
+  internal-query-key: ${AGENT_BIZ_QUERY_KEY:}
 
 logging:
   level:

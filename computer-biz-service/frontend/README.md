@@ -40,7 +40,7 @@ cd /d/java/computer-biz-service/frontend && npm install && npm run dev
 | 限制 | 表现 | 前端如何应对 |
 | --- | --- | --- |
 | **同时只允许一个入库任务** | 第二个文件被拒：`已有入库任务正在处理：「xxx.txt」，请稍后再试` | `ingestStore` 用串行闸门，上一个任务到达终态后才放出下一个 |
-| **只保留最近一个 job** | 新任务一提交，旧 `job_id` 立刻 404：`任务不存在(仅保留最近一个任务)` | 不能「先全部上传再慢慢轮询」，必须一个一个来 |
+| **已完成 job 保留 1 小时 / 最多 20 个** | 超期后才 404：`任务不存在或已过期` | 正常轮询没问题；不要把它当长期任务存储 |
 | **只接受 `.txt`** | `不支持的文件格式: .md（支持 ['.txt']）` | `UploadPage` 的 `accept=".txt"` 与上游对齐 |
 
 > 这三条都是**上游行为**，不是本前端的取舍。哪天 FastAPI 放开了，
@@ -110,6 +110,49 @@ SSE 那条路复用它 —— **错误文案只能有一份实现**，否则早�
            .body(new ApiErrorResp(e.getDetail()));
    ```
 
+## Agent 问答（新页签）
+
+第三个页签「Agent 问答」走的是另一条链路：
+
+```
+浏览器 ──/api/rag/agent/chat──► Java :8080 ──/ai/agent/chat──► FastAPI :8102
+         SSE（data: 一行事件）                NDJSON（一行一个 JSON）
+```
+
+Java **不解释事件**，把 Python 的每一行原样塞进一个 SSE `data:` 帧。
+所以前端拿到的每一帧就是一个完整的事件对象，和旧链路「猜 delta 信封」完全不同。
+
+| 事件 | 前端行为 |
+|---|---|
+| `start` | 记录 `run_id`（气泡头上的 `run ...`） |
+| `thought` | 追加到可折叠的「决策过程」 |
+| `tool_call` | 新建工具卡片（运行中） |
+| `tool_result` | 按 `call_id` 更新卡片：成功/失败、结果摘要；优先用上游 `elapsed_ms`，缺失才用 `ts` 差 |
+| `confirm_required` | 弹出确认框；批准/拒绝都调 `POST /api/rag/agent/confirm`，**流不中断** |
+| `answer` | 追加正文（和旧链路一样逐段渲染） |
+| `error` | 记录文案；没有 `done` 就按失败/中断收尾 |
+| `done` | 唯一可信的成功信号 |
+
+> ★ 为什么必须看 `done`：Python 的 `BUSY` / `MODEL_ERROR` / `MAX_STEPS` 都是
+> 「先发一个 `error` 事件，然后正常 return」。HTTP 200 + 流正常关闭完全不等于成功。
+> 这条规则在 Java 和前端各实现了一次，是刻意重复 —— 两边都要能独立判断终态。
+
+写操作的确认是**人类在环**：Agent 调用 `kb_ingest` / `kb_delete` 前会停下来等，
+弹窗里显示工具名和完整参数；拒绝后工具不执行，Agent 会继续给出最终回答。
+确认接口不经过问答流，所以不会把正在生成的回答打断。
+
+输入框左侧的「上传待入库文件」只调 `POST /api/rag/agent/stage` 暂存文件，
+**不会直接入库**。上传成功后草稿会填成「请把「xxx.txt」入库」，用户按下发送，
+Agent 才会调用 `kb_ingest`（并且仍然要过写操作确认）。这样「是否入库」始终是
+用户在对话里的明确表达，而不是点错按钮的副作用。
+
+开发时不想启动 LightRAG 和模型，可以用假上游：
+
+```bash
+python -X utf8 tools/stub-agent-upstream.py   # :8102
+# 含「入库」的问题会走 confirm_required；其它问题走 kb_search
+```
+
 ## 错误处理
 
 后端所有错误出口都是 `{"detail": "..."}` + 真实 HTTP 状态码，
@@ -137,6 +180,12 @@ node tools/verify-chat.mjs
 
 # 错误文案回归（★ 不需要任何后端）
 node tools/verify-http-errors.mjs
+
+# Agent 链路：事件归纳 + 确认流程 + 中止（★ 不需要任何后端）
+node tools/verify-agent.mjs
+
+# Agent 页面端到端（需假上游 + Java + Vite）
+node tools/verify-agent-ui.cjs
 ```
 
 `verify-serial.cjs` 会每隔 400ms 采样一次 DOM，断言**任一时刻活动态任务数 ≤ 1**，
@@ -154,27 +203,34 @@ src/
 ├─ api/
 │  ├─ http.js          axios 实例 + 错误拦截器（抽 detail、带 status）；
 │  │                    toHttpError 是两条链路的公共出口
-│  └─ rag.js           三个接口的薄封装 + snake_case 字段归一化；
-│                      chatStream = fetch + 手写 SSE 分帧
+│  ├─ rag.js           旧链路：三个接口的薄封装 + snake_case 归一化；
+│  │                    chatStream = fetch + 手写 SSE 分帧（分帧器被 agent 复用）
+│  └─ agent.js         Agent 链路：SSE 帧就是事件 JSON；confirm 走 axios
 ├─ ingest/
 │  └─ ingestStore.js   ★ 核心：状态机 + 串行闸门 + 轮询调度
 ├─ chat/
-│  └─ chatStore.js     问答会话：消息列表 + 流式写入 + 停止/中断/失败收尾
-│                      （刻意比 ingestStore 薄：不排队、不轮询）
+│  └─ chatStore.js     旧问答：消息列表 + 流式写入 + 停止/中断/失败收尾
+├─ agent/
+│  ├─ agentStore.js    Agent 问答：正文 + 决策轨迹 + 待确认写操作
+│  └─ toolMeta.js      工具中文标签 / 参数摘要 / 耗时格式化
 ├─ hooks/
 │  ├─ useIngestTasks.js  只是 store 的订阅壳
-│  └─ useChat.js         同上
+│  ├─ useChat.js         同上
+│  └─ useAgentChat.js    同上
 ├─ components/
 │  ├─ TaskItem.jsx     单个任务行（三段式进度）
 │  ├─ TaskList.jsx
-│  └─ ChatMessage.jsx  一条消息气泡（纯文本，不做 markdown 渲染）
+│  ├─ ChatMessage.jsx  旧链路消息气泡（纯文本，不做 markdown 渲染）
+│  ├─ AgentMessage.jsx Agent 消息气泡（轨迹 + 正文 + 终态标签）
+│  └─ AgentSteps.jsx   可折叠决策过程 / 工具调用卡片
 ├─ pages/
-│  ├─ UploadPage.jsx   Upload.Dragger 对接点
-│  └─ ChatPage.jsx     输入框 + 消息列表（Enter 发送 / Shift+Enter 换行）
+│  ├─ UploadPage.jsx     Upload.Dragger 对接点
+│  ├─ ChatPage.jsx       旧问答页（对照组）
+│  └─ AgentChatPage.jsx  Agent 问答页 + 写操作确认弹窗
 └─ utils/format.js
 ```
 
-两个页面在 `App.jsx` 里用 antd `Tabs` 切换。两个 store 都是模块级单例，
+三个页面在 `App.jsx` 里用 antd `Tabs` 切换。三个 store 都是模块级单例，
 所以切页签不会丢状态、也不会打断正在生成的回答。
 
 ## 上游 `/ai/chat` 的请求契约（已实测确认）

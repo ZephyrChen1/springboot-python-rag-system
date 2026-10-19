@@ -223,8 +223,13 @@ function buildChatBody({ userId, sessionId, message, topK }) {
   return body
 }
 
-/** 把错误响应读成 JSON 或文本，交给 toHttpError 统一翻译 */
-async function readErrorBody(res) {
+/**
+ * 把错误响应读成 JSON 或文本，交给 toHttpError 统一翻译。
+ *
+ * 导出给 api/agent.js 复用：agent 那条路同样走 fetch + ReadableStream，
+ * 错误体只有这一种读法。
+ */
+export async function readErrorBody(res) {
   try {
     const raw = await res.text()
     if (!raw) return null
@@ -248,7 +253,7 @@ async function readErrorBody(res) {
  *
  * 所以先按 JSON 解一次。解析失败（被截断、或者是代理生成的 HTML）再退回纯文本。
  */
-function strayDetail(stray) {
+export function strayDetail(stray) {
   if (!stray) return ''
   let detail = ''
   try {

@@ -2,15 +2,17 @@ package org.example.computerbizservice.client;
 
 import lombok.RequiredArgsConstructor;
 
+import org.example.computerbizservice.dto.request.rag.AgentChatReq;
+import org.example.computerbizservice.dto.request.rag.AgentConfirmReq;
 import org.example.computerbizservice.dto.request.rag.FileUploadReq;
 import org.example.computerbizservice.dto.response.rag.FileUploadResp;
+import org.example.computerbizservice.dto.response.rag.RagStageResp;
 import org.example.computerbizservice.dto.response.rag.TaskQueryResp;
 import org.example.computerbizservice.dto.request.rag.AiChatReq;
 import org.example.computerbizservice.exception.RagApiException;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
@@ -19,18 +21,9 @@ import org.springframework.web.reactive.function.client.WebClient; //处理SSE
 import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CoderResult;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 /**
  * 对 FastAPI rag 服务的调用层：一个方法对应一个上游接口，只做「拼请求 + 反序列化」。
@@ -41,8 +34,11 @@ import reactor.core.publisher.Mono;
 public class RagClient {
 
     private static final String UPLOAD_PATH = "/v1/kb/upload";
+    private static final String STAGE_PATH = "/v1/kb/stage";
     private static final String INGEST_PATH = "/v1/kb/ingest";
     private static final String CHAT_PATH = "/ai/chat";
+    private static final String AGENT_CHAT_PATH = "/ai/agent/chat";
+    private static final String AGENT_CONFIRM_PATH = "/ai/agent/confirm";
 
     private final RestClient ragRestClient;
     private final WebClient ragWebClient; //专门处理SSE
@@ -61,6 +57,26 @@ public class RagClient {
                 .body(body.build()) //发给FastAPI
                 .retrieve() //等待获取响应
                 .body(FileUploadResp.class); //接收FastAPI返回
+    }
+
+    /**
+     * POST /v1/kb/stage：只暂存文件，立即返回 staged_id。
+     *
+     * <p>和 {@link #upload} 的区别是「入库由谁决定」：upload 直接开始入库，
+     * stage 只落盘，等 Agent 在对话里判断用户确实要入库时再调 kb_ingest。
+     */
+    public RagStageResp stage(MultipartFile file) {
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("file", toResource(file))
+                .filename(Optional.ofNullable(file.getOriginalFilename()).orElse("unknown"))
+                .contentType(parseMediaType(file.getContentType()));
+
+        return ragRestClient.post()
+                .uri(STAGE_PATH)
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(body.build())
+                .retrieve()
+                .body(RagStageResp.class);
     }
 
     /** GET /v1/kb/ingest/{job_id}，查询入库任务进度 */
@@ -92,6 +108,54 @@ public class RagClient {
     }
 
     /**
+     * POST /ai/agent/chat，Agentic RAG 问答，逐行返回 NDJSON 事件。
+     *
+     * <p>和 {@link #aiChat} 的三个不同点：
+     * <ul>
+     *   <li><b>身份走请求头</b>：{@code X-User-Id} 由 Java 注入（本轮恒为演示用户），
+     *       请求体里没有 user_id —— 不信客户端声明的身份。</li>
+     *   <li><b>响应是 {@code application/x-ndjson}</b>：一行一个事件 JSON。仍然走
+     *       {@link Utf8Stream#lines} 自己按字节解，不交给 Spring 的 NDJSON/SSE 读取器
+     *       （理由同 {@link #decodeRawText}：读取器会按响应头替我们解释内容）。</li>
+     *   <li>错误处理与 {@link #aiChat} 完全一致：开流前失败翻成 {@link RagApiException}。</li>
+     * </ul>
+     *
+     * @param userId 由服务端决定，绝不取自请求体
+     */
+    public Flux<String> agentChat(AgentChatReq req, long userId) {
+        return ragWebClient.post()
+                .uri(AGENT_CHAT_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_NDJSON)
+                .header("X-User-Id", Long.toString(userId))
+                .bodyValue(req)
+                .exchangeToFlux(response -> {
+                    if (response.statusCode().isError()) {
+                        return response.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .flatMapMany(body -> Flux.error(RagApiException.fromUpstream(
+                                        response.statusCode().value(), body, objectMapper)));
+                    }
+                    return Utf8Stream.lines(response.bodyToFlux(DataBuffer.class));
+                });
+    }
+
+    /**
+     * POST /ai/agent/confirm，批准/拒绝一次等待中的写操作。
+     *
+     * <p>同步调用：确认接口本身不流式，且前端需要立刻知道 token 是否还有效
+     * （过期/不存在时上游返回 404，由 {@code RagApiException} 翻译）。
+     */
+    public void agentConfirm(AgentConfirmReq req) {
+        ragRestClient.post()
+                .uri(AGENT_CONFIRM_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(req) // RestClient 是 body(...)；bodyValue(...) 是 WebClient 的 API
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /**
      * 把上游的响应体按**原始字节**解成文本块。
      *
      * ★ 为什么不能直接 .bodyToFlux(String.class)：
@@ -112,72 +176,9 @@ public class RagClient {
      * 这和前端 TextDecoder({stream:true}) 是同一件事。
      */
     private Flux<String> decodeRawText(Flux<DataBuffer> chunks) {
-        return Flux.defer(() -> { // defer：每次订阅拿到各自独立的解码器状态，
-            // 否则两路并发问答会互相污染残字节
-            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPLACE)
-                    .onUnmappableCharacter(CodingErrorAction.REPLACE);
-            ByteArrayOutputStream carry = new ByteArrayOutputStream(8); // 只存被切开的半个字符
-
-            Flux<String> texts = chunks.map(buf -> {
-                try {
-                    byte[] bytes = new byte[buf.readableByteCount()];
-                    buf.read(bytes);
-                    if (carry.size() > 0) {
-                        carry.write(bytes);
-                        bytes = carry.toByteArray();
-                        carry.reset();
-                    }
-                    ByteBuffer in = ByteBuffer.wrap(bytes);
-                    // ★ 必须用三参重载 + endOfInput=false，不能用单参 decoder.decode(in)。
-                    //   单参那个是「一次性解完全部输入」的便利方法：它内部按 endOfInput=true 调三参，
-                    //   最后还会 flush()，于是结尾那半截字符被当成「输入到此结束的坏字节」，
-                    //   按 REPLACE 换成 U+FFFD 并吃掉，position 直接走到末尾 ——
-                    //   hasRemaining() 恒为 false，下面的 carry 就永远拿不到东西。
-                    //   （实测：8 字节 [E4 BD A0 E5 A5 BD E4 B8]
-                    //      单参     → 解出 你好 + U+FFFD，position=8，remaining=0
-                    //      三参false → 解出 你好，          position=6，remaining=2 ← 要的是这个）
-                    //   false = 「后面还有输入」，这样解不完的残字节才会留在 in 里。
-                    CharBuffer out = CharBuffer.allocate(bytes.length + 1); // UTF-8 每字节最多产出一个字符
-                    CoderResult cr = decoder.decode(in, out, false); // 这个重载不抛受检异常，改看返回值
-                    if (cr.isError()) { // REPLACE 策略下不该发生，留作防御
-                        throw new RagApiException(502, "上游返回的内容不是合法 UTF-8");
-                    }
-                    if (in.hasRemaining()) {
-                        carry.write(bytes, in.position(), in.remaining());
-                    }
-                    out.flip();
-                    return out.toString();
-                } catch (IOException e) {
-                    throw new RagApiException(502, "读取上游响应失败：" + e.getMessage());
-                } finally {
-                    // DataBuffer 可能是 Netty 的池化缓冲区，不还回去就是内存泄漏
-                    DataBufferUtils.release(buf);
-                }
-            }).filter(s -> !s.isEmpty()); // 整块都是残字节时解不出东西，别往下游发空串
-
-            // 收尾：流结束时还留着残字节，说明最后那个字符真的被截断了，解成 U+FFFD 收场
-            Mono<String> tail = Mono.fromSupplier(() -> {
-                if (carry.size() == 0) {
-                    return "";
-                }
-                byte[] rest = carry.toByteArray();
-                carry.reset();
-                // 输出缓冲给 rest.length + 1 就够：REPLACE 策略下每个坏字节最多产出一个 U+FFFD
-                CharBuffer out = CharBuffer.allocate(rest.length + 1);
-                // 这两个重载不抛受检异常，改看返回的 CoderResult；REPLACE 策略下不会是 error
-                if (decoder.decode(ByteBuffer.wrap(rest), out, true).isError()) { // true = 输入到此结束
-                    return "";
-                }
-                if (decoder.flush(out).isError()) {
-                    return "";
-                }
-                out.flip();
-                return out.toString();
-            }).filter(s -> !s.isEmpty());
-
-            return texts.concatWith(tail);
-        });
+        // 解码细节（残字节 carry、三参 decode、DataBuffer release）集中在 Utf8Stream，
+        // agent 的 NDJSON 分帧和这里的裸文本共用同一份实现 —— 那份坑只踩一次。
+        return Utf8Stream.decode(chunks);
     }
 
     private Resource toResource(MultipartFile file) {

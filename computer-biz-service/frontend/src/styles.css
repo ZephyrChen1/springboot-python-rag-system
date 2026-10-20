@@ -308,3 +308,165 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ------------------------------------------------------------ 抓取动态 */
+
+.news-alert {
+  margin-bottom: 12px;
+}
+
+.news-stats {
+  margin-bottom: 12px;
+}
+
+.news-stats .ant-card {
+  height: 100%;
+}
+
+.news-stats .ant-statistic-title {
+  font-size: 12px;
+}
+
+/* 最近运行卡不放 Statistic：一行时间 + 一个状态标签，比大数字更好读 */
+.news-last-run-card .ant-card-head {
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.news-last-run-card .ant-card-head-title {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.news-last-run-card .ant-card-body {
+  padding: 10px 12px 12px;
+}
+
+.news-last-run__time {
+  margin-bottom: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.news-note {
+  margin-bottom: 4px !important;
+  font-size: 12px;
+}
+
+.news-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.news-card {
+  margin-bottom: 12px;
+}
+
+.news-run-detail {
+  padding: 4px 0;
+}
+
+.news-run-id {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.news-title-cell__main {
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.news-title-cell__original {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #8c8c8c;
+  word-break: break-word;
+}
+
+.news-title-cell__excerpt {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #595959;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.news-source-cell {
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.news-source-cell__id {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+.news-drawer-title {
+  font-size: 15px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.news-detail-meta {
+  margin-bottom: 4px;
+}
+
+.news-detail-meta .ant-descriptions-item-label {
+  width: 96px;
+  white-space: nowrap;
+}
+
+.news-detail-meta .ant-descriptions-item-content {
+  word-break: break-word;
+}
+
+.news-detail-section {
+  margin-top: 18px;
+}
+
+.news-detail-section .ant-typography {
+  margin-bottom: 8px;
+}
+
+.news-detail-text {
+  margin-bottom: 0 !important;
+  line-height: 1.7;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.news-facts {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+.news-facts li {
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+/* 抓到的正文是纯文本，保留换行；不用等宽字体，否则中文很难读 */
+.news-doc {
+  max-height: 52vh;
+  margin: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fafafa;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

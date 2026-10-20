@@ -316,22 +316,27 @@ class IngestJobRegistryTest(unittest.TestCase):
             return f"[成功]{filename}"
 
     def setUp(self):
-        with ingest._lock:
-            ingest._active_job = None
-            ingest._jobs.clear()
+        self.tmp = tempfile.TemporaryDirectory()
         self.patches = [
             mock.patch.object(ingest, "KnowledgeBaseService", self.FakeKB),
             mock.patch.object(ingest, "read_ingest_progress", return_value=None),
+            mock.patch.object(
+                config, "ingest_job_db", os.path.join(self.tmp.name, "jobs.db")
+            ),
+            mock.patch.object(
+                config, "ingest_lock_path", os.path.join(self.tmp.name, "ingest.lock")
+            ),
         ]
         for p in self.patches:
             p.start()
+        with ingest._lock:
+            ingest._active_job_id = None
+            ingest._active_lock = None
 
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        with ingest._lock:
-            ingest._active_job = None
-            ingest._jobs.clear()
+        self.tmp.cleanup()
 
     def test_finished_job_stays_queryable_after_next_submit(self):
         first = ingest.submit_ingest("first.txt", b"1")

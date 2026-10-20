@@ -1,6 +1,7 @@
 import { Layout, Tabs, Typography } from 'antd'
 import AgentChatPage from './pages/AgentChatPage.jsx'
 import ChatPage from './pages/ChatPage.jsx'
+import NewsPage from './pages/NewsPage.jsx'
 import UploadPage from './pages/UploadPage.jsx'
 
 const { Header, Content } = Layout
@@ -14,6 +15,7 @@ const TABS = [
   { key: 'ingest', label: '文档入库', children: <UploadPage /> },
   { key: 'chat', label: '知识库问答', children: <ChatPage /> },
   { key: 'agent', label: 'Agent 问答', children: <AgentChatPage /> },
+  { key: 'news', label: '抓取动态', children: <NewsPage /> },
 ]
 
 export default function App() {
@@ -32,7 +34,7 @@ export default function App() {
       </Header>
 
       <Content style={{ padding: 24 }}>
-        <div style={{ maxWidth: 880, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <Tabs defaultActiveKey="ingest" items={TABS} />
         </div>
       </Content>

@@ -17,8 +17,10 @@ from lightrag import QueryParam
 
 import config_data as config
 from knowledge_base import describe_ingest_stage, forget_md5, read_ingest_progress
+from news_ingest.lock import LockBusy
 from rag_api.ingest import (
     IngestBusyError,
+    acquire_kb_write_lock,
     find_job_by_file_name,
     get_job,
     submit_ingest,
@@ -498,32 +500,46 @@ class KbDeleteTool(Tool):
         # content_hash 取出来（用于清理旧格式的 md5.text）。
         content_hash = _doc_content_hash(doc_id)
 
-        # 放到线程里执行同步删除：断连/取消只会停止等待，不会把删除本身
-        # 拦腰截断（半截删除会留下孤立的实体/关系）。
-        delete_sync = getattr(ctx.lightrag, "delete_by_doc_id", None)
+        # 删除和入库共用同一把跨进程写锁：LightRAG 的文件型存储在
+        # 两个进程同时改写时会互相覆盖。
         try:
-            if callable(delete_sync):
-                result = await asyncio.to_thread(delete_sync, doc_id)
-            else:
-                result = await ctx.lightrag.adelete_by_doc_id(doc_id)
-        except Exception as exc:
-            return ToolResult(False, f"[删除失败] {exc}", error="delete_failed")
+            lock = await asyncio.to_thread(acquire_kb_write_lock)
+        except LockBusy:
+            return ToolResult(
+                False,
+                "[忙碌] 正在入库或删除其它文档，请稍后重试",
+                error="busy",
+            )
 
-        status = getattr(result, "status", "unknown")
-        message = getattr(result, "message", str(result))
-        ok = status == "success"
-
-        removed = 0
-        if ok:
-            # 删除成功但仍留在 md5.text 里的记录会让下次上传永远被“跳过”。
-            # 按文件名能精确清掉新格式；content_hash 兜底老格式。
+        try:
+            # 放到线程里执行同步删除：断连/取消只会停止等待，不会把删除本身
+            # 拦腰截断（半截删除会留下孤立的实体/关系）。
+            delete_sync = getattr(ctx.lightrag, "delete_by_doc_id", None)
             try:
-                removed = forget_md5(
-                    file_name=file_name,
-                    content_hash=content_hash,
-                )
-            except Exception:
-                pass
+                if callable(delete_sync):
+                    result = await asyncio.to_thread(delete_sync, doc_id)
+                else:
+                    result = await ctx.lightrag.adelete_by_doc_id(doc_id)
+            except Exception as exc:
+                return ToolResult(False, f"[删除失败] {exc}", error="delete_failed")
+
+            status = getattr(result, "status", "unknown")
+            message = getattr(result, "message", str(result))
+            ok = status == "success"
+
+            removed = 0
+            if ok:
+                # 删除成功但仍留在 md5.text 里的记录会让下次上传永远被“跳过”。
+                # 按文件名能精确清掉新格式；content_hash 兜底老格式。
+                try:
+                    removed = forget_md5(
+                        file_name=file_name,
+                        content_hash=content_hash,
+                    )
+                except Exception:
+                    pass
+        finally:
+            lock.release()
 
         summary = f"删除文档 {file_name}（{doc_id}）：{status}，{message}"
         if removed:

@@ -676,3 +676,13 @@ Spring Boot 4 / MyBatis-Plus 3.5.17 上抄教程最容易翻车的四点，`pom.
 
 
 
+
+
+## 本地基础设施（Docker Compose）
+
+Qdrant 和（可选的）MySQL 可以用一条命令起，不必手工 `docker run` 或本机装库：
+
+- `docker compose up -d` —— Qdrant（:6333）
+- `docker compose --profile mysql up -d` —— MySQL（:3307，避开本机 3306）
+
+应用进程（uvicorn / mvnw / vite）仍在宿主机跑。首次从旧的 `docker run qdrant` 容器切换时如何保留向量数据、MySQL 初始化与端口覆盖，见 [docker/README.md](docker/README.md)。

@@ -14,8 +14,12 @@ import tempfile
 
 import config_data as config
 from file_history_store import _SESSION_ID_RE
+from news_ingest.lock import RunLock
 
 _DIR = "./chat_history"
+# append_turn 是「读-改-写」，同一 session 的并发 run 会丢掉其中一轮。
+# 文件锁同时管住跨线程和跨进程（多 worker 时也成立）。
+_MEMORY_LOCK_TIMEOUT_S = 10.0
 
 
 def _validate(session_id: str) -> str:
@@ -72,20 +76,26 @@ def load(session_id: str, limit: int | None = None) -> list[dict]:
 
 def append_turn(session_id: str, question: str, answer: str) -> None:
     """追加一轮问答。answer 为空也写入，用于记录一次失败。"""
-    messages = _read_all(session_id)
-    messages.append({"role": "user", "content": _truncate(question)})
-    messages.append({"role": "assistant", "content": _truncate(answer or "")})
-    messages = messages[-config.agent_history_max_turns * 2:]
-
-    path = _path(session_id)
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-
-    # 原子写：避免进程中断留下半个 JSON，导致下一轮读不出历史
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+    _validate(session_id)
+    lock = RunLock(os.path.join(_DIR, ".locks", f"agent_{session_id}.lock"))
+    lock.acquire(timeout=_MEMORY_LOCK_TIMEOUT_S)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(messages, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        messages = _read_all(session_id)
+        messages.append({"role": "user", "content": _truncate(question)})
+        messages.append({"role": "assistant", "content": _truncate(answer or "")})
+        messages = messages[-config.agent_history_max_turns * 2:]
+
+        path = _path(session_id)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+        # 原子写：避免进程中断留下半个 JSON，导致下一轮读不出历史
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(messages, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
     finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+        lock.release()

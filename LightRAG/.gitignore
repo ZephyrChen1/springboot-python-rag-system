@@ -44,3 +44,6 @@ agent_runs/
 *.tmp
 .DS_Store
 Thumbs.db
+
+# ==== 新闻抓取运行时状态/日志 ====
+crawler_state/

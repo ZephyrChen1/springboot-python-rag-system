@@ -19,6 +19,8 @@ from .loop import run_agent
 from .tools.base import ToolContext
 
 _END = object()
+# 进程内并发上限。多 worker 时实际上限是 worker 数 × 该值，
+# 需要全局上限时只能外置（Redis/DB 计数）。
 _SEM = threading.BoundedSemaphore(max(1, config.agent_max_concurrent_runs))
 
 

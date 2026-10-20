@@ -6,6 +6,9 @@ import org.example.computerbizservice.dto.request.rag.AgentChatReq;
 import org.example.computerbizservice.dto.request.rag.AgentConfirmReq;
 import org.example.computerbizservice.dto.request.rag.FileUploadReq;
 import org.example.computerbizservice.dto.response.rag.FileUploadResp;
+import org.example.computerbizservice.dto.response.rag.NewsItemPageResp;
+import org.example.computerbizservice.dto.response.rag.NewsItemResp;
+import org.example.computerbizservice.dto.response.rag.NewsOverviewResp;
 import org.example.computerbizservice.dto.response.rag.RagStageResp;
 import org.example.computerbizservice.dto.response.rag.TaskQueryResp;
 import org.example.computerbizservice.dto.request.rag.AiChatReq;
@@ -39,6 +42,8 @@ public class RagClient {
     private static final String CHAT_PATH = "/ai/chat";
     private static final String AGENT_CHAT_PATH = "/ai/agent/chat";
     private static final String AGENT_CONFIRM_PATH = "/ai/agent/confirm";
+    private static final String NEWS_OVERVIEW_PATH = "/v1/news/overview";
+    private static final String NEWS_ITEMS_PATH = "/v1/news/items";
 
     private final RestClient ragRestClient;
     private final WebClient ragWebClient; //专门处理SSE
@@ -85,6 +90,48 @@ public class RagClient {
                 .uri(INGEST_PATH + "/{jobId}", jobId)
                 .retrieve()
                 .body(TaskQueryResp.class);
+    }
+
+    // ------------------------------------------------------------ 抓取动态
+
+    /** GET /v1/news/overview，抓取统计、源状态和最近运行记录（只读） */
+    public NewsOverviewResp newsOverview(int limit) {
+        return ragRestClient.get()
+                .uri(builder -> builder.path(NEWS_OVERVIEW_PATH)
+                        .queryParam("limit", limit)
+                        .build())
+                .retrieve()
+                .body(NewsOverviewResp.class);
+    }
+
+    /** GET /v1/news/items，抓取文章分页列表（只读） */
+    public NewsItemPageResp newsItems(String status, String sourceId, String q, int page, int pageSize) {
+        return ragRestClient.get()
+                .uri(builder -> {
+                    builder.path(NEWS_ITEMS_PATH)
+                            .queryParam("page", page)
+                            .queryParam("page_size", pageSize);
+                    if (status != null && !status.isBlank()) {
+                        builder.queryParam("status", status);
+                    }
+                    if (sourceId != null && !sourceId.isBlank()) {
+                        builder.queryParam("source_id", sourceId);
+                    }
+                    if (q != null && !q.isBlank()) {
+                        builder.queryParam("q", q);
+                    }
+                    return builder.build();
+                })
+                .retrieve()
+                .body(NewsItemPageResp.class);
+    }
+
+    /** GET /v1/news/items/{id}，单篇文章详情（含摘要、关键事实和正文） */
+    public NewsItemResp newsItem(long id) {
+        return ragRestClient.get()
+                .uri(NEWS_ITEMS_PATH + "/{id}", id)
+                .retrieve()
+                .body(NewsItemResp.class);
     }
 
     /** POST /ai/chat, ai问答 */

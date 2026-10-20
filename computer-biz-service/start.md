@@ -14,6 +14,11 @@
 #
 # 然后建表：db/schema.sql 的全文，在 computer_biz 跑一遍、在 computer_biz_test 再跑一遍。
 # （本轮没有迁移工具，以后改表要改这个文件 + 在库上手写 ALTER）
+#
+# 可选：不想在本机装 MySQL 时，用仓库根目录的 docker compose 起一个（宿主机 3307）：
+#   docker compose --profile mysql up -d
+# 然后本终端设 DB_PORT=3307、DB_PASSWORD=<与根目录 .env 的 DB_PASSWORD 一致>。
+# 建表脚本会自动执行；mvn test 需要的 computer_biz_test 见 docker/README.md。
 
 # ① FastAPI（8102）
 cd D:\python\code

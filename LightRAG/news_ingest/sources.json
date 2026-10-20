@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://openai.com/news/rss.xml",
+      "site_url": "https://openai.com/news/",
+      "domains": ["openai.com"],
+      "article_url_patterns": ["^https://openai\\.com/(index|news)/"],
+      "language": "en",
+      "max_items": 50,
+      "note": "官方新闻 RSS；旧 /blog/rss.xml 会跳转"
+    },
+    {
+      "id": "deepmind",
+      "name": "Google DeepMind",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://deepmind.google/blog/rss.xml",
+      "site_url": "https://deepmind.google/blog/",
+      "domains": ["deepmind.google"],
+      "language": "en",
+      "max_items": 50
+    },
+    {
+      "id": "google_ai",
+      "name": "Google AI",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://blog.google/technology/ai/rss/",
+      "site_url": "https://blog.google/technology/ai/",
+      "domains": ["blog.google"],
+      "language": "en",
+      "max_items": 50
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://huggingface.co/blog/feed.xml",
+      "site_url": "https://huggingface.co/blog/",
+      "domains": ["huggingface.co"],
+      "language": "en",
+      "max_items": 50
+    },
+    {
+      "id": "meta",
+      "name": "Meta Newsroom",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://about.fb.com/news/feed/",
+      "site_url": "https://about.fb.com/news/",
+      "domains": ["about.fb.com"],
+      "language": "en",
+      "max_items": 50,
+      "note": "官方 newsroom 混有非 AI 内容，依赖规则 + LLM 过滤"
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "enabled": true,
+      "type": "sitemap",
+      "feed_url": "https://www.anthropic.com/sitemap.xml",
+      "site_url": "https://www.anthropic.com/news/",
+      "domains": ["anthropic.com", "www.anthropic.com"],
+      "article_url_patterns": ["^https://www\\.anthropic\\.com/news/"],
+      "include_prefixes": ["https://www.anthropic.com/news/"],
+      "language": "en",
+      "max_items": 50,
+      "note": "官方无 RSS，使用官方 sitemap + 文章页"
+    },
+    {
+      "id": "apple_ml",
+      "name": "Apple Machine Learning",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://machinelearning.apple.com/rss.xml",
+      "site_url": "https://machinelearning.apple.com/",
+      "domains": ["machinelearning.apple.com"],
+      "language": "en",
+      "max_items": 50
+    },
+    {
+      "id": "aws_ml",
+      "name": "AWS Machine Learning Blog",
+      "enabled": true,
+      "type": "rss",
+      "feed_url": "https://aws.amazon.com/blogs/machine-learning/feed/",
+      "site_url": "https://aws.amazon.com/blogs/machine-learning/",
+      "domains": ["aws.amazon.com"],
+      "language": "en",
+      "max_items": 50
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen Blog",
+      "enabled": false,
+      "type": "rss",
+      "feed_url": "https://qwenlm.github.io/blog/index.xml",
+      "site_url": "https://qwenlm.github.io/blog/",
+      "domains": ["qwenlm.github.io"],
+      "language": "en",
+      "max_items": 50,
+      "note": "官方团队博客；默认关闭，验证可达后开启"
+    }
+  ]
+}

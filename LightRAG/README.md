@@ -28,7 +28,8 @@
 ├── rag_api/                  # FastAPI 服务（对外 HTTP 接口）
 │   ├── main.py               # 应用入口 + 鉴权中间件
 │   ├── deps.py               # 依赖注入
-│   ├── ingest.py             # 入库任务调度（进程内单任务 + 互斥锁）
+│   ├── ingest.py             # 入库调度（跨进程写锁 + 单任务）
+│   ├── jobs.py               # 入库任务注册表（SQLite，跨进程可查）
 │   └── routers/
 │       ├── kb.py             # 知识库接口
 │       └── ai_chat.py        # 问答接口
@@ -38,7 +39,7 @@
 └── .env.example
 ```
 
-运行时生成、**不纳入版本控制**的目录：`Lightrag_db/`（向量索引与缓存）、`chat_history/`（会话记录）、`md5.text`（入库指纹）。
+运行时生成、**不纳入版本控制**的目录：`Lightrag_db/`（向量索引与缓存）、`chat_history/`（会话记录，含 `.locks/` 会话锁）、`crawler_state/`（新闻状态库、入库任务库 `rag_jobs.db` 与写锁文件）、`md5.text`（入库指纹）。
 
 ## 环境要求
 
@@ -65,6 +66,14 @@ cp .env.example .env
 
 ### 3. 启动 Qdrant
 
+在仓库根目录用 compose 起（推荐，数据在 named volume 里，删容器不丢）：
+
+```bash
+docker compose up -d
+```
+
+或者手工起一个临时容器：
+
 ```bash
 docker run -d --name qdrant -p 6333:6333 qdrant/qdrant
 ```
@@ -77,7 +86,11 @@ docker run -d --name qdrant -p 6333:6333 qdrant/qdrant
 uvicorn rag_api.main:app --host 0.0.0.0 --port 8102 --workers 1
 ```
 
-> **必须单 worker。** 服务内部依赖常驻事件循环与进程内单例，多 worker 会导致多个实例并发写同一工作目录。
+> **仍然必须单 worker。** 入库任务状态（`crawler_state/rag_jobs.db`）和 KB 写锁
+> （`crawler_state/ingest.lock`）已经跨进程，重启不丢 job、两个进程也不会同时写；
+> 但 LightRAG 实例仍是进程内单例，其 KV/doc_status 是文件型存储、每个进程各持一份
+> 内存快照，多 worker 会互相覆盖。为什么 A 路线还不够、后续怎么扩容见
+> [扩容路线](#扩容路线)。
 
 交互文档：<http://localhost:8102/docs>
 
@@ -94,7 +107,7 @@ streamlit run streamlit_qa.py              # 问答
 |---|---|---|
 | `GET` | `/health` | 存活探针 |
 | `POST` | `/v1/kb/upload` | 上传文档入库，`multipart/form-data`，字段 `file`；返回 `job_id` |
-| `GET` | `/v1/kb/ingest/{job_id}` | 轮询入库进度（仅保留最近一个任务） |
+| `GET` | `/v1/kb/ingest/{job_id}` | 轮询入库进度（已完成任务保留 1 小时，最多 20 个） |
 | `POST` | `/ai/chat` | 流式问答，返回 `text/event-stream` |
 
 `POST /ai/chat` 请求体：
@@ -133,8 +146,41 @@ X-API-Key: <RAG_API_KEY>
 | `LIGHTRAG_TOP_K` | `20` | 检索候选数；知识库内容多时建议 15–20，过大易撑爆上下文 |
 | `LIGHTRAG_MAX_HISTORY_TURNS` | `10` | 会话历史保留轮数 |
 | `LIGHTRAG_MODE` | `hybrid` | 检索模式：`naive`/`local`/`global`/`hybrid`/`mix` |
+| `INGEST_JOB_DB` | `./crawler_state/rag_jobs.db` | 入库任务状态库（跨进程可查） |
+| `INGEST_LOCK_PATH` | `./crawler_state/ingest.lock` | 入库/删除共用的跨进程写锁 |
+| `KB_DELETE_LOCK_TIMEOUT_S` | `30` | 删除文档时等待写锁的最长秒数 |
 
 支持的文件类型见 `config_data.py` 的 `supported_file_extensions`（当前仅 `.txt`）。
+
+## 扩容路线
+
+当前「单 worker」不是随便加的保险，而是由 LightRAG 的存储模型决定的。
+进程内状态已经拆成三类，处理方式不同：
+
+| 状态 | 原来 | 现在 | 跨进程 |
+|---|---|---|---|
+| 入库任务 job | `rag_api.ingest._jobs` 字典 | `crawler_state/rag_jobs.db`（SQLite WAL） | ✅ |
+| 入库/删除互斥 | `threading.Lock` | `crawler_state/ingest.lock`（OS 文件锁 + 进程内线程锁） | ✅ |
+| 会话历史 | 整文件读-改-写 | 按 session 的文件锁串行 | ✅ |
+| LightRAG KV / doc_status | 文件型 JSON，进程内快照 | 未变 | ❌ |
+
+所以重启 API 不会丢 job，crawler、agent 删除和入库也不会同时写；但开
+`--workers N` 仍然不安全：每个进程会各自把 `kv_store_*.json` 读进内存，
+写入时整体覆盖，N 个进程轮流出题就会丢数据。
+
+按投入从低到高：
+
+1. **A（已完成）**：任务状态、写锁、会话历史外置。解决的是「重启丢 job」
+   和「并发写互踩」，不解决 KV 快照。
+2. **B**：继续单写进程，多读进程。写进程独占 LightRAG；读进程只读 Qdrant +
+   共享 KV（把 `JsonKVStorage` 换成 Redis/Postgres 实现）。需要改
+   LightRAG 的 storage 装配，读进程还要能拿到最新的 doc_status。
+3. **C**：把入库改成异步队列（API 只入队，单独 worker 消费），读写彻底分离。
+   吞吐最高，但引入队列组件和最终一致性，适合确实有并发入库压力时再上。
+
+在 B/C 落地前，请保持 `--workers 1`；单 worker 下的并发保护
+（agent `_SEM`、入库互斥）都是进程内的，多 worker 时上限会变成
+「worker 数 × 各自上限」。
 
 ## 注意
 

@@ -39,6 +39,16 @@ supported_file_extensions = [".txt"] #先测试用
 # 留空则不启用鉴权，仅用于内网/开发环境。Java 后台与 RAG 服务共享此密钥。
 rag_api_key = os.environ.get("RAG_API_KEY", "")
 
+# ---- 入库任务状态与跨进程互斥 ----
+# 任务状态放 SQLite：原先存在进程内 dict 里，API 重启或多进程时
+# GET /v1/kb/ingest/{job_id} 会落到没处理过该任务的进程而 404。
+ingest_job_db = os.environ.get("INGEST_JOB_DB", "./crawler_state/rag_jobs.db")
+# 跨进程写锁：LightRAG 的 KV/doc_status 是文件型存储，任何时刻只允许
+# 一个进程执行入库/删除。锁由 OS 维护，进程崩溃时自动释放。
+ingest_lock_path = os.environ.get("INGEST_LOCK_PATH", "./crawler_state/ingest.lock")
+# 删除文档等待写锁的最长时间（秒）；超时返回“忙碌”而不是硬失败。
+kb_delete_lock_timeout_s = float(os.environ.get("KB_DELETE_LOCK_TIMEOUT_S", "30"))
+
 def validate_config(strict: bool = False) -> None:
     """校验必要配置是否齐全。
 

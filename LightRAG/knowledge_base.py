@@ -2,6 +2,7 @@ from document_loader import extract_text
 import os
 import json
 import tempfile
+import time
 import config_data as config
 from lightrag_service import get_lightrag_service
 from hashlib import md5
@@ -13,6 +14,10 @@ _INGEST_STATUS_ANALYZING = "analyzing"
 _INGEST_STATUS_PROCESSING = "processing"
 _INGEST_STATUS_PROCESSED = "processed"
 _INGEST_STATUS_FAILED = "failed"
+
+# ainsert 正常会一直等到终态；这里再等一小段时间，防止 doc_status 落盘
+# 比 ainsert 返回晚一步。超时仍非终态按失败处理，不写指纹。
+_INGEST_STATUS_WAIT_S = 30.0
 
 # md5 索引行格式：兼容旧的「只有 hash」与新的「hash\t文件名」。
 # 带上文件名是为了删除文档时能精确地把它从索引里摘掉，
@@ -199,6 +204,20 @@ def describe_ingest_stage(progress: dict | None, elapsed_sec: float | None = Non
     return f"处理中…{tail}"
 
 
+def _wait_for_ingest_terminal(file_name: str) -> dict | None:
+    """等待该文件在 doc_status 里出现终态；超时返回最后一次进度。"""
+    deadline = time.monotonic() + _INGEST_STATUS_WAIT_S
+    progress = None
+    while True:
+        progress = read_ingest_progress(config.lightrag_working_dir, file_name)
+        status = (progress or {}).get("status")
+        if status in (_INGEST_STATUS_PROCESSED, _INGEST_STATUS_FAILED):
+            return progress
+        if time.monotonic() >= deadline:
+            return progress
+        time.sleep(0.2)
+
+
 class KnowledgeBaseService(object):
     def __init__(self):
         os.makedirs(config.lightrag_working_dir, exist_ok=True) #向量数据库路径
@@ -214,6 +233,18 @@ class KnowledgeBaseService(object):
             return "[跳过]内容已存在于知识库中"
 
         track_id = self.lightrag.insert_text(data, file_path=filename)
+
+        # ainsert 返回 track_id 不等于处理成功：实体抽取失败时它照样返回，
+        # 失败信息只落在 doc_status。这里以终态为准；失败不写指纹，否则
+        # 同一份内容会被永久判为“已入库”，用户无法重试。
+        progress = _wait_for_ingest_terminal(filename)
+        status = (progress or {}).get("status")
+        if status == _INGEST_STATUS_FAILED:
+            reason = (progress or {}).get("error_msg") or "未知错误"
+            return f"[失败]入库失败：{reason}"
+        if status != _INGEST_STATUS_PROCESSED:
+            return f"[失败]入库状态未确认（{status or '无记录'}），请稍后重试"
+
         save_md5(md5_hex, file_name=filename)
         return f"[成功]内容已经成功载入知识库（LightRAG track={track_id}）"
 

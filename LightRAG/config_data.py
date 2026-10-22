@@ -15,7 +15,7 @@ md5_path = './md5.text'
 #模型参数
 BASE_URL = os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-LLM_MODEL = "qwen-plus"
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen-max")
 EMBED_MODEL = "text-embedding-v4"
 EMBED_DIM = 1024   # text‑embedding‑v4向量维度1024
 max_token_embed = 2048

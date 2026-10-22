@@ -1,0 +1,60 @@
+# 本地基础设施：Qdrant + MySQL（MySQL 是可选的 profile）
+#
+#   docker compose up -d                     # 只起 Qdrant（宿主机 :6333/:6334）
+#   docker compose --profile mysql up -d     # 同时起 MySQL（宿主机 :3307）
+#
+# 应用进程（uvicorn / mvnw / vite）仍然跑在宿主机，这里只替代
+# 「手工 docker run Qdrant + 本机装 MySQL」。为什么要用 named volume、
+# 怎么从旧的 docker run 容器迁移数据，见 docker/README.md。
+name: rag-system
+
+services:
+  qdrant:
+    # 与现有容器版本一致；升级前先看 Qdrant 的 release notes
+    image: qdrant/qdrant:v1.19.0
+    container_name: rag-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      # 不要换成 Windows 目录的 bind mount：Qdrant 是 Linux 进程，
+      # 跨文件系统写入既慢又可能遇到权限/锁语义差异
+      - qdrant_data:/qdrant/storage
+
+  mysql:
+    profiles: ["mysql"]
+    image: mysql:8.4
+    container_name: rag-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      # 与 Java 侧默认值保持一致（application.yaml: DB_NAME / DB_USER）
+      MYSQL_DATABASE: computer_biz
+      MYSQL_USER: computer_biz
+      MYSQL_PASSWORD: ${DB_PASSWORD:-123456}
+    ports:
+      # 默认 3307 而不是 3306：本机可能已经装了 MySQL84（见 start.md）。
+      # 换到这个容器时，Java 启动前设 DB_PORT=3307 即可。
+      - "${MYSQL_HOST_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 只在 mysql_data 为空（首次初始化）时执行；复用仓库里唯一的建表脚本，
+      # 避免 schema 出现两份。wrapper 负责 USE 数据库，见文件内注释。
+      - ./computer-biz-service/db/schema.sql:/schema/schema.sql:ro
+      - ./docker/mysql/init/10-schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      # mysqladmin ping 即使遇到 Access denied 也返回 0（服务活着但拒绝连接），
+      # 正好符合「只探活」的用途，顺便避免在 YAML 里处理密码转义
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  qdrant_data:
+  mysql_data:

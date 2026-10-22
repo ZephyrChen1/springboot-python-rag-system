@@ -1,0 +1,8 @@
+# docker compose 的本地覆盖（可能含真实密码）
+.env
+
+# 迁移 Qdrant 数据时的临时备份目录
+docker-data/
+qdrant-storage-backup/
+
+# 各模块自己的忽略规则见 LightRAG/.gitignore

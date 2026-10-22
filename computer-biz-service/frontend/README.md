@@ -205,7 +205,8 @@ src/
 │  │                    toHttpError 是两条链路的公共出口
 │  ├─ rag.js           旧链路：三个接口的薄封装 + snake_case 归一化；
 │  │                    chatStream = fetch + 手写 SSE 分帧（分帧器被 agent 复用）
-│  └─ agent.js         Agent 链路：SSE 帧就是事件 JSON；confirm 走 axios
+│  ├─ agent.js         Agent 链路：SSE 帧就是事件 JSON；confirm 走 axios
+│  └─ news.js          抓取动态：概览 / 列表 / 详情的只读封装 + 字段归一化
 ├─ ingest/
 │  └─ ingestStore.js   ★ 核心：状态机 + 串行闸门 + 轮询调度
 ├─ chat/
@@ -226,12 +227,14 @@ src/
 ├─ pages/
 │  ├─ UploadPage.jsx     Upload.Dragger 对接点
 │  ├─ ChatPage.jsx       旧问答页（对照组）
-│  └─ AgentChatPage.jsx  Agent 问答页 + 写操作确认弹窗
+│  ├─ AgentChatPage.jsx  Agent 问答页 + 写操作确认弹窗
+│  └─ NewsPage.jsx       抓取动态：概览 / 文章列表 / 详情
 └─ utils/format.js
 ```
 
-三个页面在 `App.jsx` 里用 antd `Tabs` 切换。三个 store 都是模块级单例，
-所以切页签不会丢状态、也不会打断正在生成的回答。
+四个页面在 `App.jsx` 里用 antd `Tabs` 切换。前三个 store 都是模块级单例，
+所以切页签不会丢状态、也不会打断正在生成的回答；「抓取动态」只做只读查询，
+状态留在 `NewsPage` 组件内，不需要 store。
 
 ## 上游 `/ai/chat` 的请求契约（已实测确认）
 
